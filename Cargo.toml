@@ -1,7 +1,7 @@
 [package]
 name = "chromedriver-api"
 description = "This API is designed for interacting with chromedriver (browser auto clicker)"
-keywords = ["chromedriver", "API", "chrome", "browser", "auto-clicker", "clicker"]
+keywords = ["chromedriver", "API", "chrome", "browser", "clicker"]
 categories = ["development-tools"]
 version = "0.1.0"
 license = "MIT"
