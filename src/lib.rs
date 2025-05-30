@@ -4,4 +4,4 @@ pub mod error;   pub use error::{ Error, Result };
 pub mod prelude;
 
 pub mod manager;  pub use manager::TaskManager;
-pub mod session;  pub use session::Session;
+pub mod session;  pub use session::{ Session, Tab };
