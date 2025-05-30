@@ -13,14 +13,6 @@
 This API is designed for interacting with chromedriver (browser auto clicker).
 
 
-## Basic Methods:
-
-* **.open(URL)** - Open URL-address on Chrome browser window
-* **.inject(JS_SCRIPT)** - Inject JavaScript code to process
-* **.click(CSS_SELECTOR)** - Click to element by CSS selector
-* **.value(CSS_SELECTOR, VALUE)** - Change element value by CSS selector
-
-
 ## Examples:
 
 ```rust
@@ -29,42 +21,48 @@ use tokio::time::{ sleep, Duration };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // running chromedriver session:
-    let mut session = Session::run("54477", Some("C:\\Users\\Synap\\AppData\\Local\\Google\\Chrome\\Profiles\\Profile1")).await?;
-
+    let mut session = Session::run("54477", Some("C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\Profiles\\Profile1")).await?;
     println!("[INFO]: the session is launched on port [54477] ..");
 
-    // opening website URL:
-    session.open("https://vk.com/otaku_lounge?w=wall-230618027_38").await?;
-
-    println!("[INFO]: loaded page url 'https://vk.com/otaku_lounge?w=wall-230618027_38'");
-
-
-    sleep(Duration::from_secs(1)).await;  // (just waiting some times for test)
+    // open frist tab:
+    let first_tab = session.open("https://example.com/").await?;
+    let mut first_tab = first_tab.lock().await;
+    println!("[INFO]: a new tab is opened on 'https://example.com/' ..");
     
-    // executing script:
-    match script(&session).await {
-        Ok(_) => println!("[INFO] Script is successfully executed!"),
-        Err(e) => eprintln!("[INFO] Executing script error: {e}"),
-    }
-    
-    // executing our scripts:
-    sleep(Duration::from_secs(2)).await;  // (just waiting some times for test)
-    
+    sleep(Duration::from_secs(1)).await;
 
-    // closing session && stopping server:
+    // open second tab:
+    let second_tab = session.open("https://example.com/").await?;
+    let mut second_tab = second_tab.lock().await;
+    println!("[INFO]: a new tab is opened on 'https://example.com/' ..");
+
+    sleep(Duration::from_secs(1)).await;
+
+    // inject script to first tab:
+    first_tab.inject(r#"
+        alert("Ok!")
+    "#).await?;
+
+    sleep(Duration::from_secs(1)).await;
+
+    // do second tab active:
+    second_tab.active().await?;
+
+    sleep(Duration::from_secs(1)).await;
+
+    // close second tab:
+    second_tab.close().await?;
+    println!("[INFO]: the second tab is closed");
+
+    sleep(Duration::from_secs(1)).await;
+
+    // close session:
     session.close().await?;
     println!("[INFO]: the session is closed");
 
     Ok(())
 }
 
-async fn script(session: &Session) -> Result<()> {
-    // click to button:
-    session.click(r#"div[aria-label="Отправить реакцию «Лайк»"]"#).await?;
-
-    Ok(())
-}
 ```
 
 ## Licensing:

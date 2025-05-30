@@ -1,21 +1,25 @@
-use crate::prelude::*;
+use crate::{ prelude::*, TaskManager };
+use super::Tab;
 
 use std::process::{ Command, Stdio };
+
 use reqwest::Client;
 use serde_json::{ json, Value };
 
 /// The chromedriver session
 #[derive(Debug)]
 pub struct Session {
-    process: std::process::Child,
     client: Client,
     port: String,
+    process: std::process::Child,
     session_id: String,
+    manager: Arc<TaskManager>,
+    is_first_tab: bool,
 }
 
 impl Session {
-    /// Run chromedriver session && Browser window
-    /// * port: a new chromedriver session port
+    /// Run chromedriver session in new window
+    /// * port: a new chromedriver session IP-port
     /// * profile_path: path to storage user profile
     pub async fn run<S>(port: S, profile_path: Option<&str>) -> Result<Self>
     where
@@ -26,15 +30,12 @@ impl Session {
         // starting chromedriver server as background process:
         let mut cmd = Command::new("chromedriver");
         cmd.arg(fmt!("--port={port}"))
+            .arg("--silent")
             .stdout(Stdio::null())
             .stderr(Stdio::null());
 
         let process = cmd.spawn()?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // waiting when chromedriver is initializes..
-
-        // init client:
-        let client = Client::new();
-        let session_url = fmt!("http://localhost:{port}/session");
 
         // init request options:
         let mut options = json!({
@@ -46,6 +47,10 @@ impl Session {
             options["goog:chromeOptions"] = json!({ "args": vec![ fmt!("--user-data-dir={path}") ] });
         }
 
+        // init client:
+        let client = Client::new();
+        let session_url = fmt!("http://localhost:{port}/session");
+        
         // send request:
         let response = client
             .post(&session_url)
@@ -67,59 +72,114 @@ impl Session {
             .to_string();
 
         Ok(Self {
-            process,
             client,
             port,
-            session_id
+            process,
+            session_id,
+            manager: Arc::new(TaskManager::new()),
+            is_first_tab: true
         })
     }
     
-    /// Open URL-address on Chrome browser window
-    pub async fn open(&mut self, url: &str) -> Result<()> {
-        // opening URL:
-        self.client
-            .post(&fmt!("http://localhost:{}/session/{}/url", self.port, self.session_id))
-            .json(&json!({ "url": url }))
-            .send()
-            .await?
-            .error_for_status()?;
+    /// Open URL-address on new tab
+    pub async fn open<S>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>>
+    where
+        S: Into<String>
+    {
+        let url = url.into();
 
-        Ok(())
-    }
+        // open default tab:
+        let tab = if self.is_first_tab {
+            self.is_first_tab = false;
 
-    /// Inject JavaScript code to process
-    pub async fn inject(&self, script: &str) -> Result<Value> {
-        let url = format!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
-        let response = self.client
-            .post(&url)
-            .json(&json!({
-                "script": script,
-                "args": []
-            }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Value>()
-            .await?;
+            // get tabs list:
+            let handles_url = format!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
+            let resp = self.client
+                .get(&handles_url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await?;
 
-        Ok(response["value"].clone())
-    }
+            let handles = resp["value"]
+                .as_array()
+                .ok_or(Error::IncorrectWindowHandles)?;
 
-    /// Click to element by CSS selector
-    pub async fn click(&self, selector: &str) -> Result<Value> {
-        self.inject(&fmt!(r#"
-            __button = document.querySelector('{selector}');
-            __button.focus();
-            __button.click();
-        "#)).await
-    }
+            // get first tab:
+            let first_handle = handles
+                .get(0)
+                .and_then(|v| v.as_str())
+                .ok_or(Error::NoWindowHandles)?
+                .to_string();
 
-    /// Change element value by CSS selector
-    pub async fn value(&self, selector: &str, value: &str) -> Result<Value> {
-        self.inject(&fmt!(r#"
-            __input = document.querySelector('{selector}');
-            __input.value = "{value}";
-        "#)).await
+            // creating tab:
+            let mut tab = Tab {
+                client: self.client.clone(),
+                port: self.port.clone(),
+                session_id: self.session_id.clone(),
+                window_handle: first_handle.clone(),
+                url: url.clone(),
+                manager: self.manager.clone()
+            };
+
+            // open URL:
+            tab.open(url).await?;
+
+            tab
+        }
+        // create a new tab:
+        else {
+            // opening new tab:
+            let script = "window.open('about:blank', '_blank');";
+            let execute_url = format!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
+            self.client
+                .post(&execute_url)
+                .json(&json!({
+                    "script": script,
+                    "args": []
+                }))
+                .send()
+                .await?
+                .error_for_status()?;
+
+            // get tabs list:
+            let handles_url = format!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
+            let resp = self.client
+                .get(&handles_url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await?;
+
+            let handles = resp["value"]
+                .as_array()
+                .ok_or(Error::IncorrectWindowHandles)?
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+
+            // search new tab handle:
+            let new_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
+
+            // create tab:
+            let mut tab = Tab {
+                client: self.client.clone(),
+                port: self.port.clone(),
+                session_id: self.session_id.clone(),
+                window_handle: new_handle.clone(),
+                url: url.clone(),
+                manager: self.manager.clone()
+            };
+            
+            // open URL:
+            tab.open(url).await?;
+            
+            tab
+        };
+
+        Ok(Arc::new(Mutex::new(tab)))
     }
 
     /// Close chromedriver session
