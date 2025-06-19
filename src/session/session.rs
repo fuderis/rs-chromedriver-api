@@ -21,7 +21,8 @@ impl Session {
     /// Run chromedriver session in new window
     /// * port: a new chromedriver session IP-port
     /// * profile_path: path to storage user profile
-    pub async fn run<S>(port: S, profile_path: Option<&str>) -> Result<Self>
+    /// * headless: runs as headless mode (without interface)
+    pub async fn run<S>(port: S, profile_path: Option<&str>, headless: bool) -> Result<Self>
     where
         S: Into<String>
     {
@@ -42,10 +43,19 @@ impl Session {
             "browserName": "chrome"
         });
 
-        // loading & saving profile data:
+        // loading & saving profile data + headless режим:
+        let mut args = vec![];
         if let Some(path) = profile_path {
-            options["goog:chromeOptions"] = json!({ "args": vec![ fmt!("--user-data-dir={path}") ] });
+            args.push(format!("--user-data-dir={}", path));
         }
+
+        // append headless mode:
+        if headless {
+            args.push("--headless".to_string());
+            args.push("--disable-gpu".to_string());
+        }
+
+        options["goog:chromeOptions"] = json!({ "args": args });
 
         // init client:
         let client = Client::new();

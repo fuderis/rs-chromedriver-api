@@ -1,7 +1,7 @@
 use macron::{ Display, Error, From };
 
 // Result alias
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static>>;
 
 // Chromedriver API Error
 #[derive(Debug, Display, Error, From)]

@@ -19,7 +19,7 @@ impl Tab {
     async fn active_without_lock(&mut self) -> Result<()> {
         self.client
             .post(&format!("http://localhost:{}/session/{}/window", self.port, self.session_id))
-            .json(&json!({ "handle": self.window_handle }))
+            .json(&json!({"handle": self.window_handle }))
             .send()
             .await?
             .error_for_status()?;

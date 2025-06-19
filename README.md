@@ -21,7 +21,11 @@ use tokio::time::{ sleep, Duration };
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut session = Session::run("54477", Some("C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\Profiles\\Profile1")).await?;
+    let mut session = Session::run(
+        "54477",                                                                        // session server ip port
+        Some("C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\Profiles\\Profile1"),   // path to load/save profile (cookies, localStorage and etc.)
+        true                                                                            // headless mode (without interface)
+    ).await?;
     println!("[INFO]: the session is launched on port [54477] ..");
 
     // open frist tab:
