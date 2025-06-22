@@ -1,10 +1,15 @@
 use crate::{ prelude::*, TaskManager };
 use super::Tab;
 
-use std::process::{ Command, Stdio };
+use std::{
+    process::{ Command, Stdio },
+    os::windows::process::CommandExt
+};
 
 use reqwest::Client;
 use serde_json::{ json, Value };
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// The chromedriver session
 #[derive(Debug)]
@@ -33,7 +38,8 @@ impl Session {
         cmd.arg(fmt!("--port={port}"))
             .arg("--silent")
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW);
 
         let process = cmd.spawn()?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // waiting when chromedriver is initializes..
