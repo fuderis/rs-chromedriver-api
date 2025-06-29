@@ -27,14 +27,21 @@ impl Session {
     /// * port: a new chromedriver session IP-port
     /// * profile_path: path to storage user profile
     /// * headless: runs as headless mode (without interface)
-    pub async fn run<S>(port: S, profile_path: Option<&str>, headless: bool) -> Result<Self>
+    pub async fn run<S, P>(port: S, chromedriver_path: Option<P>, profile_path: Option<P>, headless: bool) -> Result<Self>
     where
-        S: Into<String>
+        S: Into<String>,
+        P: AsRef<Path>,
     {
         let port = port.into();
         
+        // get path to chromedriver:
+        let mut cmd = if let Some(path) = chromedriver_path {
+            Command::new(new_path(path)?)
+        } else {
+            Command::new("chromedriver")
+        };
+
         // starting chromedriver server as background process:
-        let mut cmd = Command::new("chromedriver");
         cmd.arg(fmt!("--port={port}"))
             .arg("--silent")
             .stdout(Stdio::null())
@@ -52,7 +59,8 @@ impl Session {
         // loading & saving profile data + headless режим:
         let mut args = vec![];
         if let Some(path) = profile_path {
-            args.push(format!("--user-data-dir={}", path));
+            let path = path.as_ref().to_path_buf().to_str().ok_or(Error::InvalidPath)?.replace("/", "\\");
+            args.push(format!("--user-data-dir={path}"));
         }
 
         // append headless mode:

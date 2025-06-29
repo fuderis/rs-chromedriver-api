@@ -6,6 +6,12 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + std::mar
 // Chromedriver API Error
 #[derive(Debug, Display, Error, From)]
 pub enum Error {
+    #[display = "Couldn't get the directory of the root path"]
+    InvalidRootPath,
+
+    #[display = "The path contains invalid UTF-8 characters"]
+    InvalidPath,
+    
     #[display = "Incorrect session ID"]
     IncorrectSessionId,
 
