@@ -8,9 +8,8 @@
 
 # Chromedriver API (auto clicker)
 
-## Introduction:
-
-This API is designed for interacting with chromedriver (browser auto clicker).
+This API is designed to interact with the [google chromedriver](https://developer.chrome.com/docs/chromedriver/downloads).
+This is useful to create browser-based parsers or autoclickers.
 
 
 ## Examples:
@@ -21,30 +20,35 @@ use tokio::time::{ sleep, Duration };
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let free_port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port().to_string();
+
+    println!("[INFO]: Starting chrome session ..");
+
     let mut session = Session::run(
-        "54477",  // session server ip port
+        &free_port,  // session server ip port
         Some("/bin/chromedriver/chromedriver.exe"),  // path to chromedriver (None = to use global system Path)
         Some("C:/Users/Admin/AppData/Local/Google/Chrome/Profiles/Profile1"),  // path to load/save profile (cookies, localStorage and etc.)
         false  // headless mode (without interface)
     ).await?;
-    println!("[INFO]: the session is launched on port [54477] ..");
+
+    println!("[INFO]: Session is launched on port [{free_port}] ..");
 
     // open first tab:
     let first_tab = session.open("https://example.com/").await?;
     let mut first_tab = first_tab.lock().await;
-    println!("[INFO]: a new tab is opened on 'https://example.com/' ..");
+    println!("[INFO]: A new tab is opened on 'https://example.com/' ..");
     
     sleep(Duration::from_secs(1)).await;
 
     // open second tab:
     let second_tab = session.open("https://example.com/").await?;
     let mut second_tab = second_tab.lock().await;
-    println!("[INFO]: a new tab is opened on 'https://example.com/' ..");
+    println!("[INFO]: A new tab is opened on 'https://example.com/' ..");
 
     sleep(Duration::from_secs(1)).await;
 
-    // inject script to first tab:
-    first_tab.inject(r#"
+    // inject script to first tab (where: <DESERIALIZE_DATA>):
+    let _result = first_tab.inject::<()>(r#"
         alert("Ok!")
     "#).await?;
 
@@ -57,13 +61,13 @@ async fn main() -> Result<()> {
 
     // close second tab:
     second_tab.close().await?;
-    println!("[INFO]: the second tab is closed");
+    println!("[INFO]: The second tab is closed");
 
     sleep(Duration::from_secs(1)).await;
 
     // close session:
     session.close().await?;
-    println!("[INFO]: the session is closed");
+    println!("[INFO]: The session is closed");
 
     Ok(())
 }

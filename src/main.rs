@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     sleep(Duration::from_secs(1)).await;
 
     // inject script to first tab:
-    first_tab.inject(r#"
+    first_tab.inject::<()>(r#"
         alert("Ok!")
     "#).await?;
 

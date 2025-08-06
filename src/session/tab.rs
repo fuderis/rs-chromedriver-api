@@ -70,7 +70,7 @@ impl Tab {
     }
 
     /// Inject JavaScript to window tab
-    pub async fn inject(&mut self, script: &str) -> Result<Value> {
+    pub async fn inject<D: serde::de::DeserializeOwned>(&mut self, script: &str) -> Result<D> {
         // lock other tasks:
         self.manager.lock().await;
         
@@ -94,7 +94,9 @@ impl Tab {
         // unlock other tasks:
         self.manager.unlock().await;
 
-        Ok(response["value"].clone())
+        let value = response.get("value").unwrap().to_owned();
+        
+        Ok(serde_json::from_value::<D>(value)?)
     }
 
     /// Close window tab
