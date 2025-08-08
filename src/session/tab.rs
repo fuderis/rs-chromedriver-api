@@ -44,7 +44,7 @@ impl Tab {
     pub async fn open<S>(&mut self, url: S) -> Result<()>
     where
         S: Into<String>
-    {       
+    {
         let url = url.into();
 
         // lock other tasks:

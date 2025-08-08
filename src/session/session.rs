@@ -25,13 +25,10 @@ pub struct Session {
 impl Session {
     /// Run chromedriver session in new window
     /// * port: a new chromedriver session IP-port
+    /// * chromedriver_path: path to chromedriver (None = to use global PATH)
     /// * profile_path: path to storage user profile
     /// * headless: runs as headless mode (without interface)
-    pub async fn run<S, P>(port: S, chromedriver_path: Option<P>, profile_path: Option<P>, headless: bool) -> Result<Self>
-    where
-        S: Into<String>,
-        P: AsRef<Path>,
-    {
+    pub async fn run<S: Into<String>, P: AsRef<Path>>(port: S, chromedriver_path: Option<P>, profile_path: Option<P>, headless: bool) -> Result<Self> {
         let port = port.into();
         
         // get path to chromedriver:
@@ -106,10 +103,7 @@ impl Session {
     }
     
     /// Open URL-address on new tab
-    pub async fn open<S>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>>
-    where
-        S: Into<String>
-    {
+    pub async fn open<S: Into<String>>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>> {
         let url = url.into();
 
         // open default tab:

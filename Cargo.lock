@@ -85,7 +85,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chromedriver-api"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "macron",
  "reqwest",
@@ -578,9 +578,9 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "macron"
-version = "0.1.6"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e095b8a705605d30eed162c90dd413eb4593e8282a7667018d5fa2fc205dbcd"
+checksum = "869ebf5d2e1f24702df6c5ffc8492afc5085d92a82fd59b7bbda8da034fe6c3a"
 dependencies = [
  "macron-collections",
  "macron-impl-display",
