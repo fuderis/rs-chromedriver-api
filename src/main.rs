@@ -4,13 +4,17 @@ use macron::path;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let free_port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port().to_string();
+    let chrome_path = path!("bin/chromedriver/chromedriver.exe");
+    let session_path = path!("%/ChromeDriver/Profile");
+
     let mut session = Session::run(
-        "54477",
-        "bin/chromedriver/chromedriver.exe",
-        Some(path!("$/ChromeDriver/Profile")),
-        false
+        &free_port,             // server port
+        chrome_path,            // path to binary chromedriver file
+        Some(session_path),     // directory to save/load chrome session
+        false                   // headless mode on/off
     ).await?;
-    println!("[INFO]: the session is launched on port [54477] ..");
+    println!("[INFO]: the session is launched on port [{free_port}] ..");
 
     // open first tab:
     let first_tab = session.open("https://example.com/").await?;

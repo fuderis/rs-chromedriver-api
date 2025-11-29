@@ -19,8 +19,8 @@ pub struct Session {
 impl Session {
     /// Run chromedriver session in new window
     /// * port: a new chromedriver session IP-port
-    /// * chromedriver_path: path to chromedriver (None = to use global PATH)
-    /// * profile_path: path to storage user profile
+    /// * chromedriver_path: path to chromedriver
+    /// * profile_path: path to storage user profile (None = do not save session)
     /// * headless: runs as headless mode (without interface)
     pub async fn run<S: Into<String>, P: Into<PathBuf>>(port: S, chromedriver_path: P, profile_path: Option<PathBuf>, headless: bool) -> Result<Self> {
         let port = port.into();
