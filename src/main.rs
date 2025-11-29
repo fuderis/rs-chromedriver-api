@@ -1,10 +1,15 @@
-extern crate chromedriver_api;  use chromedriver_api::{ prelude::*, Session };
-
+use chromedriver_api::{ prelude::*, Session };
 use tokio::time::{ sleep, Duration };
+use macron::path;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut session = Session::run("54477", Some("bin/chromedriver/chromedriver.exe"), Some("C:/Users/Synap/AppData/Local/Google/Chrome/Profiles/Profile1"), false).await?;
+    let mut session = Session::run(
+        "54477",
+        "bin/chromedriver/chromedriver.exe",
+        Some(path!("$/ChromeDriver/Profile")),
+        false
+    ).await?;
     println!("[INFO]: the session is launched on port [54477] ..");
 
     // open first tab:

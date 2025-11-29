@@ -32,6 +32,7 @@ impl Tab {
         // lock other tasks:
         self.manager.lock().await;
         
+        // do tab active:
         self.active_without_lock().await?;
 
         // unlock other tasks:
@@ -61,7 +62,8 @@ impl Tab {
             .await?
             .error_for_status()?;
 
-        self.url = url.into();
+        // update url:
+        self.url = url;
 
         // unlock other tasks:
         self.manager.unlock().await;
@@ -94,7 +96,9 @@ impl Tab {
         // unlock other tasks:
         self.manager.unlock().await;
 
-        let value = response.get("value").unwrap().to_owned();
+        let value = response.get("value")
+            .ok_or(Error::UnexpectedResponse)?
+            .to_owned();
         
         Ok(serde_json::from_value::<D>(value)?)
     }

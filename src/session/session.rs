@@ -1,15 +1,9 @@
 use crate::{ prelude::*, TaskManager };
 use super::Tab;
 
-use std::{
-    process::{ Command, Stdio },
-    os::windows::process::CommandExt
-};
-
+use std::process::{ Command, Stdio };
 use reqwest::Client;
 use serde_json::{ json, Value };
-
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// The chromedriver session
 #[derive(Debug)]
@@ -28,22 +22,29 @@ impl Session {
     /// * chromedriver_path: path to chromedriver (None = to use global PATH)
     /// * profile_path: path to storage user profile
     /// * headless: runs as headless mode (without interface)
-    pub async fn run<S: Into<String>, P: AsRef<Path>>(port: S, chromedriver_path: Option<P>, profile_path: Option<P>, headless: bool) -> Result<Self> {
+    pub async fn run<S: Into<String>, P: Into<PathBuf>>(port: S, chromedriver_path: P, profile_path: Option<PathBuf>, headless: bool) -> Result<Self> {
         let port = port.into();
         
         // get path to chromedriver:
-        let mut cmd = if let Some(path) = chromedriver_path {
-            Command::new(new_path(path)?)
-        } else {
-            Command::new("chromedriver")
-        };
+        let mut cmd = Command::new(chromedriver_path.into());
 
         // starting chromedriver server as background process:
         cmd.arg(fmt!("--port={port}"))
             .arg("--silent")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW);
+            .stderr(Stdio::null());
+
+        // settings for launching without a terminal window:
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.stdin(Stdio::null());
+        }
 
         let process = cmd.spawn()?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // waiting when chromedriver is initializes..
@@ -53,10 +54,14 @@ impl Session {
             "browserName": "chrome"
         });
 
-        // loading & saving profile data + headless режим:
+        // loading & saving profile data + headless mode:
         let mut args = vec![];
         if let Some(path) = profile_path {
-            let path = path.as_ref().to_path_buf().to_str().ok_or(Error::InvalidPath)?.replace("/", "\\");
+            let path = path
+                .to_str()
+                .ok_or(Error::InvalidPath)?
+                .to_owned();
+
             args.push(format!("--user-data-dir={path}"));
         }
 

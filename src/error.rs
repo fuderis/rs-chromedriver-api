@@ -31,5 +31,9 @@ pub enum Error {
     CdpCommandFailed,
 
     #[display = "Element not found for the given selector"]
-    ElementNotFound
+    ElementNotFound,
+
+
+    #[display = "Unexpected script response value"]
+    UnexpectedResponse,
 }
