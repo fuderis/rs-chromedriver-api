@@ -70,8 +70,17 @@ impl Session {
             args.push("--headless".to_string());
             args.push("--disable-gpu".to_string());
         }
-
         options["goog:chromeOptions"] = json!({ "args": args });
+
+        // disable automation warning:
+        #[cfg(feature = "no-automation")]
+        {
+            options["goog:chromeOptions"]["excludeSwitches"] = json!(["enable-automation"]);
+            options["goog:chromeOptions"]["useAutomationExtension"] = json!(false);
+            options["goog:chromeOptions"]["args"].as_array_mut().unwrap().extend([
+                json!("--disable-blink-features=AutomationControlled"),
+            ]);
+        }
 
         // init client:
         let client = Client::new();
@@ -106,6 +115,50 @@ impl Session {
             is_first_tab: true
         })
     }
+
+    /* 
+    /// Disabled automation context
+    pub async fn disable_automation(&mut self) -> Result<()> {
+        // АКТИВИРУЕМ текущую вкладку ПЕРЕД CDP
+        self.active_without_lock().await?;
+        
+        let cdp_url = format!("http://localhost:{}/session/{}/chromium/send_command_and_get_result", 
+                            self.port, self.session_id);
+        
+        let script = r#"
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            delete navigator.__proto__.webdriver;
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1,2,3,4,5]
+            });
+        "#;
+        
+        let params = json!({
+            "cmd": "Page.addScriptToEvaluateOnNewDocument",
+            "params": { "source": script }
+        });
+
+        let resp = self.client
+            .post(&cdp_url)
+            .json(&params)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Value>()
+            .await?;
+
+        // Проверяем статус команды
+        let status = resp["status"].as_str().unwrap_or("unknown");
+        if status != "success" {
+            tracing::warn!("CDP command failed: {:?}", resp);
+            return Err(Error::CdpCommandFailed(status.to_string()));
+        }
+        
+        Ok(())
+    }
+    */
     
     /// Open URL-address on new tab
     pub async fn open<S: Into<String>>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>> {
