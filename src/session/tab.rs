@@ -111,7 +111,7 @@ impl Tab {
         // do tab active:
         self.active_without_lock().await?;
 
-        // closing tab:
+        // close tab:
         self.client
             .delete(&format!("http://localhost:{}/session/{}/window", self.port, self.session_id))
             .send()

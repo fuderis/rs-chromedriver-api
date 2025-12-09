@@ -1,7 +1,7 @@
 use crate::{ prelude::*, TaskManager };
 use super::Tab;
 
-use std::process::{ Command, Stdio };
+use std::process::{ Command, Stdio, Child };
 use reqwest::Client;
 use serde_json::{ json, Value };
 
@@ -10,9 +10,9 @@ use serde_json::{ json, Value };
 pub struct Session {
     client: Client,
     port: String,
-    process: std::process::Child,
+    process: Child,
     session_id: String,
-    manager: Arc<TaskManager>,
+    manager: Arc<TaskManager>
 }
 
 impl Session {
@@ -171,7 +171,42 @@ impl Session {
     /// Open URL-address on new tab
     pub async fn open<S: Into<String>>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>> {
         let url = url.into();
+        
+        // switch to last tab:
+        {
+            let handles_url = fmt!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
+            let resp = self.client
+                .get(&handles_url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await?;
 
+            let handles = resp["value"]
+                .as_array()
+                .ok_or(Error::IncorrectWindowHandles)?;
+
+            // get first tab:
+            let last_handle = handles
+                .last()
+                .and_then(|v| v.as_str())
+                .ok_or(Error::NoWindowHandles)?
+                .to_string();
+
+            // create tab:
+            let mut tab = Tab {
+                client: self.client.clone(),
+                port: self.port.clone(),
+                session_id: self.session_id.clone(),
+                window_handle: last_handle.clone(),
+                url: url.clone(),
+                manager: self.manager.clone()
+            };
+
+            tab.active().await?;
+        }
+        
         // open new tab:
         let script = "window.open('about:blank', '_blank');";
         let execute_url = fmt!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
