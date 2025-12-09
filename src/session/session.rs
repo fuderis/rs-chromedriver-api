@@ -13,7 +13,6 @@ pub struct Session {
     process: std::process::Child,
     session_id: String,
     manager: Arc<TaskManager>,
-    is_first_tab: bool,
 }
 
 impl Session {
@@ -106,13 +105,13 @@ impl Session {
             .ok_or(Error::IncorrectSessionId)?
             .to_string();
 
+        #[allow(unused_mut)]
         let mut this = Self {
             client,
             port,
             process,
             session_id,
             manager: Arc::new(TaskManager::new()),
-            is_first_tab: true
         };
 
         #[cfg(feature = "no-automation")]
