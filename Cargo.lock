@@ -85,7 +85,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chromedriver-api"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "macron",
  "reqwest",
@@ -589,6 +589,8 @@ dependencies = [
  "macron-impl-into",
  "macron-map",
  "macron-path",
+ "macron-regex",
+ "macron-str",
 ]
 
 [[package]]
@@ -658,6 +660,23 @@ name = "macron-path"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c9df1283060d6cbf9be984f35aac5936eb75a3ca28b1082f19a5c6a49424d6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "macron-regex"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "055b1d9e7b56b4f45b9a7501532f88b6306e3bf91fcbea8ffb71b3811380f793"
+
+[[package]]
+name = "macron-str"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d354b048a4a2bcf527b6106bcc1fb68145a444b568107f7fb7782b7014195157"
 dependencies = [
  "proc-macro2",
  "quote",

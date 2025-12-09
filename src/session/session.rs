@@ -62,6 +62,8 @@ impl Session {
                 .to_owned();
 
             args.push(fmt!("--user-data-dir={path}"));
+            args.push(fmt!("--disable-cache"));
+            args.push(fmt!("--disk-cache-size=1"));
         }
 
         // append headless mode:
@@ -83,7 +85,7 @@ impl Session {
 
         // init client:
         let client = Client::new();
-        let session_url = fmt!("http://localhost:{port}/session");
+        let session_url = fmt!("http://127.0.0.1:{port}/session");
         
         // send request:
         let response = client
@@ -124,7 +126,7 @@ impl Session {
 
     /// Disabled automation context
     pub async fn disable_automation(&mut self) -> Result<()> {
-        let cdp_url = fmt!("http://localhost:{}/session/{}/chromium/send_command", self.port, self.session_id);
+        let cdp_url = fmt!("http://127.0.0.1:{}/session/{}/chromium/send_command", self.port, self.session_id);
     
         let script = r#"
             Object.defineProperty(navigator, 'webdriver', {
@@ -154,7 +156,7 @@ impl Session {
             return Err(fmt!("CDP command failed: {resp:?}").into());
         }
 
-        let exec_url = fmt!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
+        let exec_url = fmt!("http://127.0.0.1:{}/session/{}/execute/sync", self.port, self.session_id);
         let _ = self.client
             .post(&exec_url)
             .json(&json!({
@@ -174,7 +176,7 @@ impl Session {
         
         // switch to last tab:
         {
-            let handles_url = fmt!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
+            let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
             let resp = self.client
                 .get(&handles_url)
                 .send()
@@ -187,71 +189,67 @@ impl Session {
                 .as_array()
                 .ok_or(Error::IncorrectWindowHandles)?;
 
-            // get first tab:
-            let last_handle = handles
-                .last()
-                .and_then(|v| v.as_str())
-                .ok_or(Error::NoWindowHandles)?
-                .to_string();
+            // get last tab:
+            let last_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
+
+            // activate tab:
+            self.client
+                .post(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
+                .json(&json!({"handle": last_handle }))
+                .send()
+                .await?
+                .error_for_status()?;
+        }
+        
+        // open new tab:
+        let tab = {
+            let execute_url = fmt!("http://127.0.0.1:{}/session/{}/execute/sync", self.port, self.session_id);
+            self.client
+                .post(&execute_url)
+                .json(&json!({
+                    "script": "window.open('about:blank', '_blank');",
+                    "args": []
+                }))
+                .send()
+                .await?
+                .error_for_status()?;
+
+            sleep(Duration::from_millis(100)).await;
+
+            // get tabs list:
+            let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
+            let resp = self.client
+                .get(&handles_url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await?;
+
+            let handles = resp["value"]
+                .as_array()
+                .ok_or(Error::IncorrectWindowHandles)?
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+
+            // search new tab handle:
+            let new_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
 
             // create tab:
             let mut tab = Tab {
                 client: self.client.clone(),
                 port: self.port.clone(),
                 session_id: self.session_id.clone(),
-                window_handle: last_handle.clone(),
-                url: url.clone(),
+                window_handle: new_handle,
+                url: str!(""),
                 manager: self.manager.clone()
             };
 
-            tab.active().await?;
-        }
-        
-        // open new tab:
-        let script = "window.open('about:blank', '_blank');";
-        let execute_url = fmt!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
-        self.client
-            .post(&execute_url)
-            .json(&json!({
-                "script": script,
-                "args": []
-            }))
-            .send()
-            .await?
-            .error_for_status()?;
-
-        // get tabs list:
-        let handles_url = fmt!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
-        let resp = self.client
-            .get(&handles_url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Value>()
-            .await?;
-
-        let handles = resp["value"]
-            .as_array()
-            .ok_or(Error::IncorrectWindowHandles)?
-            .iter()
-            .map(|v| v.as_str().unwrap().to_string())
-            .collect::<Vec<_>>();
-
-        // search new tab handle:
-        let new_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
-
-        // create tab:
-        let mut tab = Tab {
-            client: self.client.clone(),
-            port: self.port.clone(),
-            session_id: self.session_id.clone(),
-            window_handle: new_handle.clone(),
-            url: url.clone(),
-            manager: self.manager.clone()
+            // open URL:
+            tab.open(url).await?;
+            tab
         };
-        
-        // open URL:
-        tab.open(url).await?;
 
         Ok(Arc::new(Mutex::new(tab)))
     }
@@ -259,7 +257,7 @@ impl Session {
     /// Close chromedriver session
     pub async fn close(mut self) -> Result<()> {
         // closing window:
-        let url = fmt!("http://localhost:{}/session/{}", self.port, self.session_id);
+        let url = fmt!("http://127.0.0.1:{}/session/{}", self.port, self.session_id);
         self.client
             .delete(&url)
             .send()

@@ -18,7 +18,7 @@ impl Tab {
     /// Do tab active without locking other tasks
     async fn active_without_lock(&mut self) -> Result<()> {
         self.client
-            .post(&format!("http://localhost:{}/session/{}/window", self.port, self.session_id))
+            .post(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
             .json(&json!({"handle": self.window_handle }))
             .send()
             .await?
@@ -56,7 +56,7 @@ impl Tab {
 
         // loading URL:
         self.client
-            .post(&format!("http://localhost:{}/session/{}/url", self.port, self.session_id))
+            .post(&format!("http://127.0.0.1:{}/session/{}/url", self.port, self.session_id))
             .json(&json!({ "url": url }))
             .send()
             .await?
@@ -80,7 +80,7 @@ impl Tab {
         self.active_without_lock().await?;
 
         // execute script:
-        let url = format!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
+        let url = format!("http://127.0.0.1:{}/session/{}/execute/sync", self.port, self.session_id);
         let response = self.client
             .post(&url)
             .json(&json!({
@@ -113,7 +113,7 @@ impl Tab {
 
         // close tab:
         self.client
-            .delete(&format!("http://localhost:{}/session/{}/window", self.port, self.session_id))
+            .delete(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
             .send()
             .await?
             .error_for_status()?;

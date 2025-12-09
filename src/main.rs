@@ -14,42 +14,45 @@ async fn main() -> Result<()> {
         Some(session_path),     // directory to save/load chrome session
         false                       // headless mode on/off
     ).await?;
-    println!("[INFO]: the session is launched on port [{free_port}] ..");
+    println!("[INFO]: session launched on port [{free_port}] ..");
 
 
     // open first tab:
     let first_tab = session.open("https://example.com/").await?;
     let mut first_tab = first_tab.lock().await;
-    println!("[INFO]: a new tab is opened on 'https://example.com/' ..");
-    
-    // inject script to first tab:
-    // first_tab.inject::<()>(r#"
-    //     alert("Ok!")
-    // "#).await?;
+    println!("[INFO]: a new tab opened on 'https://example.com/' ..");
 
     sleep(Duration::from_secs(1)).await;
 
     // close first tab:
-    println!("[INFO]: the first tab is closed");
     first_tab.close().await?;
+    println!("[INFO]: first tab closed");
 
+    sleep(Duration::from_secs(1)).await;
 
     // open second tab:
     let second_tab = session.open("https://example.com/").await?;
     let mut second_tab = second_tab.lock().await;
-    println!("[INFO]: a new tab is opened on 'https://example.com/' ..");
+    println!("[INFO]: a new tab opened on 'https://example.com/' ..");
 
     sleep(Duration::from_secs(1)).await;
+    
+    // inject script to second tab:
+    second_tab.inject::<()>(r#"
+        alert("Ok!")
+    "#).await?;
 
-    // close second tab:
-    println!("[INFO]: the second tab is closed");
-    second_tab.close().await?;
     sleep(Duration::from_secs(1)).await;
+    
+    // FIX: // close second tab:
+    // second_tab.close().await?;
+    // println!("[INFO]: the second tab is closed");
+    // sleep(Duration::from_secs(1)).await;
 
 
     // close session:
     session.close().await?;
-    println!("[INFO]: the session is closed");
+    println!("[INFO]: session closed");
 
     Ok(())
 }
