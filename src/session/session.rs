@@ -62,7 +62,7 @@ impl Session {
                 .ok_or(Error::InvalidPath)?
                 .to_owned();
 
-            args.push(format!("--user-data-dir={path}"));
+            args.push(fmt!("--user-data-dir={path}"));
         }
 
         // append headless mode:
@@ -106,25 +106,27 @@ impl Session {
             .ok_or(Error::IncorrectSessionId)?
             .to_string();
 
-        Ok(Self {
+        let mut this = Self {
             client,
             port,
             process,
             session_id,
             manager: Arc::new(TaskManager::new()),
             is_first_tab: true
-        })
+        };
+
+        #[cfg(feature = "no-automation")]
+        {
+            this.disable_automation().await?;
+        }
+            
+        Ok(this)
     }
 
-    /* 
     /// Disabled automation context
     pub async fn disable_automation(&mut self) -> Result<()> {
-        // АКТИВИРУЕМ текущую вкладку ПЕРЕД CDP
-        self.active_without_lock().await?;
-        
-        let cdp_url = format!("http://localhost:{}/session/{}/chromium/send_command_and_get_result", 
-                            self.port, self.session_id);
-        
+        let cdp_url = fmt!("http://localhost:{}/session/{}/chromium/send_command", self.port, self.session_id);
+    
         let script = r#"
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
@@ -149,111 +151,73 @@ impl Session {
             .json::<Value>()
             .await?;
 
-        // Проверяем статус команды
-        let status = resp["status"].as_str().unwrap_or("unknown");
-        if status != "success" {
-            tracing::warn!("CDP command failed: {:?}", resp);
-            return Err(Error::CdpCommandFailed(status.to_string()));
+        if resp.get("error").is_some() {
+            return Err(fmt!("CDP command failed: {resp:?}").into());
         }
-        
+
+        let exec_url = fmt!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
+        let _ = self.client
+            .post(&exec_url)
+            .json(&json!({
+                "script": script,
+                "args": []
+            }))
+            .send()
+            .await?
+            .error_for_status();
+
         Ok(())
     }
-    */
     
     /// Open URL-address on new tab
     pub async fn open<S: Into<String>>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>> {
         let url = url.into();
 
-        // open default tab:
-        let tab = if self.is_first_tab {
-            self.is_first_tab = false;
+        // open new tab:
+        let script = "window.open('about:blank', '_blank');";
+        let execute_url = fmt!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
+        self.client
+            .post(&execute_url)
+            .json(&json!({
+                "script": script,
+                "args": []
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
 
-            // get tabs list:
-            let handles_url = format!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
-            let resp = self.client
-                .get(&handles_url)
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<Value>()
-                .await?;
+        // get tabs list:
+        let handles_url = fmt!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
+        let resp = self.client
+            .get(&handles_url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Value>()
+            .await?;
 
-            let handles = resp["value"]
-                .as_array()
-                .ok_or(Error::IncorrectWindowHandles)?;
+        let handles = resp["value"]
+            .as_array()
+            .ok_or(Error::IncorrectWindowHandles)?
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
 
-            // get first tab:
-            let first_handle = handles
-                .get(0)
-                .and_then(|v| v.as_str())
-                .ok_or(Error::NoWindowHandles)?
-                .to_string();
+        // search new tab handle:
+        let new_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
 
-            // creating tab:
-            let mut tab = Tab {
-                client: self.client.clone(),
-                port: self.port.clone(),
-                session_id: self.session_id.clone(),
-                window_handle: first_handle.clone(),
-                url: url.clone(),
-                manager: self.manager.clone()
-            };
-
-            // open URL:
-            tab.open(url).await?;
-
-            tab
-        }
-        // create a new tab:
-        else {
-            // opening new tab:
-            let script = "window.open('about:blank', '_blank');";
-            let execute_url = format!("http://localhost:{}/session/{}/execute/sync", self.port, self.session_id);
-            self.client
-                .post(&execute_url)
-                .json(&json!({
-                    "script": script,
-                    "args": []
-                }))
-                .send()
-                .await?
-                .error_for_status()?;
-
-            // get tabs list:
-            let handles_url = format!("http://localhost:{}/session/{}/window/handles", self.port, self.session_id);
-            let resp = self.client
-                .get(&handles_url)
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<Value>()
-                .await?;
-
-            let handles = resp["value"]
-                .as_array()
-                .ok_or(Error::IncorrectWindowHandles)?
-                .iter()
-                .map(|v| v.as_str().unwrap().to_string())
-                .collect::<Vec<_>>();
-
-            // search new tab handle:
-            let new_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
-
-            // create tab:
-            let mut tab = Tab {
-                client: self.client.clone(),
-                port: self.port.clone(),
-                session_id: self.session_id.clone(),
-                window_handle: new_handle.clone(),
-                url: url.clone(),
-                manager: self.manager.clone()
-            };
-            
-            // open URL:
-            tab.open(url).await?;
-            
-            tab
+        // create tab:
+        let mut tab = Tab {
+            client: self.client.clone(),
+            port: self.port.clone(),
+            session_id: self.session_id.clone(),
+            window_handle: new_handle.clone(),
+            url: url.clone(),
+            manager: self.manager.clone()
         };
+        
+        // open URL:
+        tab.open(url).await?;
 
         Ok(Arc::new(Mutex::new(tab)))
     }

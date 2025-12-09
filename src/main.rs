@@ -9,10 +9,10 @@ async fn main() -> Result<()> {
     let session_path = path!("%/ChromeDriver/Profile");
 
     let mut session = Session::run(
-        &free_port,             // server port
-        chrome_path,            // path to binary chromedriver file
+        &free_port,                           // server port
+        chrome_path,       // path to binary chromedriver file
         Some(session_path),     // directory to save/load chrome session
-        false                   // headless mode on/off
+        false                       // headless mode on/off
     ).await?;
     println!("[INFO]: the session is launched on port [{free_port}] ..");
 
