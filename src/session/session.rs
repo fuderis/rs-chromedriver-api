@@ -97,7 +97,6 @@ impl Session {
             }))
             .send()
             .await?
-            .error_for_status()?
             .json::<Value>()
             .await?;
 
@@ -148,7 +147,6 @@ impl Session {
             .json(&params)
             .send()
             .await?
-            .error_for_status()?
             .json::<Value>()
             .await?;
 
@@ -181,7 +179,6 @@ impl Session {
                 .get(&handles_url)
                 .send()
                 .await?
-                .error_for_status()?
                 .json::<Value>()
                 .await?;
 
@@ -197,8 +194,7 @@ impl Session {
                 .post(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
                 .json(&json!({"handle": last_handle }))
                 .send()
-                .await?
-                .error_for_status()?;
+                .await?;
         }
         
         // open new tab:
@@ -211,8 +207,7 @@ impl Session {
                     "args": []
                 }))
                 .send()
-                .await?
-                .error_for_status()?;
+                .await?;
 
             sleep(Duration::from_millis(100)).await;
 
@@ -222,7 +217,6 @@ impl Session {
                 .get(&handles_url)
                 .send()
                 .await?
-                .error_for_status()?
                 .json::<Value>()
                 .await?;
 
@@ -241,7 +235,7 @@ impl Session {
                 client: self.client.clone(),
                 port: self.port.clone(),
                 session_id: self.session_id.clone(),
-                window_handle: new_handle,
+                tab_id: new_handle,
                 url: str!(""),
                 manager: self.manager.clone()
             };
@@ -261,12 +255,33 @@ impl Session {
         self.client
             .delete(&url)
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
 
         // killing chromedriver background process:
         self.process.kill()?;
 
         Ok(())
+    }
+
+    /// Returns windows handles
+    pub async fn handles(&mut self) -> Result<Vec<String>> {
+        let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
+
+        let resp = self.client
+            .get(&handles_url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Value>()
+            .await?;
+
+        let handles = resp["value"]
+            .as_array()
+            .ok_or(Error::IncorrectWindowHandles)?
+            .into_iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>();
+
+        Ok(handles)
     }
 }

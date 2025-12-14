@@ -9,20 +9,24 @@ pub struct Tab {
     pub(crate) client: Client,
     pub(crate) port: String,
     pub(crate) session_id: String,
-    pub(crate) window_handle: String,
+    pub(crate) tab_id: String,
     pub(crate) url: String,
     pub(crate) manager: Arc<TaskManager>
 }
 
 impl Tab {
+    /// Returns tab id
+    pub fn get_id(&self) -> &str {
+        &self.tab_id
+    }
+    
     /// Do tab active without locking other tasks
     async fn active_without_lock(&mut self) -> Result<()> {
         self.client
-            .post(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
-            .json(&json!({"handle": self.window_handle }))
+            .post(&fmt!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
+            .json(&json!({"handle": self.tab_id }))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
 
         Ok(())
     }
@@ -56,11 +60,10 @@ impl Tab {
 
         // loading URL:
         self.client
-            .post(&format!("http://127.0.0.1:{}/session/{}/url", self.port, self.session_id))
+            .post(&fmt!("http://127.0.0.1:{}/session/{}/url", self.port, self.session_id))
             .json(&json!({ "url": url }))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
 
         // update url:
         self.url = url;
@@ -80,7 +83,7 @@ impl Tab {
         self.active_without_lock().await?;
 
         // execute script:
-        let url = format!("http://127.0.0.1:{}/session/{}/execute/sync", self.port, self.session_id);
+        let url = fmt!("http://127.0.0.1:{}/session/{}/execute/sync", self.port, self.session_id);
         let response = self.client
             .post(&url)
             .json(&json!({
@@ -89,7 +92,6 @@ impl Tab {
             }))
             .send()
             .await?
-            .error_for_status()?
             .json::<Value>()
             .await?;
 
@@ -112,11 +114,39 @@ impl Tab {
         self.active_without_lock().await?;
 
         // close tab:
-        self.client
-            .delete(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
-            .send()
-            .await?
-            .error_for_status()?;
+        loop {
+            // do tab active (if tab not exists - break):
+            if let Err(_) = self.active_without_lock().await {
+                break;
+            }
+
+            // close tab:
+            self.client
+                .delete(&fmt!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
+                .send()
+                .await?;
+
+            // check tab for closed:
+            let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
+            let resp = self.client
+                .get(&handles_url)
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<Value>()
+                .await?;
+            let handles = resp["value"]
+                .as_array()
+                .ok_or(Error::IncorrectWindowHandles)?
+                .iter()
+                .map(|v| v.as_str().unwrap_or(""))
+                .collect::<Vec<_>>();
+
+            // tab not exists - success!
+            if !handles.contains(&self.tab_id.as_str()) {
+                break;
+            }
+        }
 
         // unlock other tasks:
         self.manager.unlock().await;
