@@ -21,15 +21,15 @@ use macron::path;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let free_port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port().to_string();
+    let free_port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
     let chrome_path = path!("bin/chromedriver/chromedriver.exe");
     let session_path = path!("%/ChromeDriver/Profile");
 
     let mut session = Session::run(
-        &free_port,
+        free_port, 
         chrome_path,
         Some(session_path),
-        false  // headless mode
+        false   // headless mode
     ).await?;
     println!("[INFO]: session launched on port [{free_port}]");
 
@@ -87,13 +87,13 @@ async fn main() -> Result<()> {
     println!("[✅] tab3 closed (multiple retries succeeded)\n");
 
     // Verify remaining handles
-    let handles = session.handles().await?;
+    let handles = session.get_handles().await?;
     println!("[INFO]: Remaining tabs: {}", handles.len());
 
     sleep(Duration::from_secs(1)).await;
     
     session.close().await?;
-    println!("[INFO]: session closed");
+    println!("[INFO]: Session closed");
 
     Ok(())
 }

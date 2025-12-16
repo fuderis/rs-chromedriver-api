@@ -1,27 +1,33 @@
-use crate::{ prelude::*, TaskManager };
+use crate::prelude::*;
+use super::SessionManager;
 
 use reqwest::Client;
 use serde_json::{ json, Value };
 
 // The window tab
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct Tab {
     pub(crate) client: Client,
-    pub(crate) port: String,
+    pub(crate) port: u16,
     pub(crate) session_id: String,
     pub(crate) tab_id: String,
     pub(crate) url: String,
-    pub(crate) manager: Arc<TaskManager>
+    pub(crate) manager: Arc<SessionManager>
 }
 
 impl Tab {
+    /// Returns chromederiver server port
+    pub fn get_port(&self) -> u16 {
+        self.port
+    }
+    
     /// Returns tab id
     pub fn get_id(&self) -> &str {
         &self.tab_id
     }
     
     /// Do tab active without locking other tasks
-    async fn active_without_lock(&mut self) -> Result<()> {
+    async fn active_without_lock(&self) -> Result<()> {
         self.client
             .post(&fmt!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
             .json(&json!({"handle": self.tab_id }))
@@ -32,7 +38,7 @@ impl Tab {
     }
 
     /// Do tab active
-    pub async fn active(&mut self) -> Result<()> {
+    pub async fn active(&self) -> Result<()> {
         // lock other tasks:
         self.manager.lock().await;
         
@@ -49,7 +55,7 @@ impl Tab {
     pub async fn open<S>(&mut self, url: S) -> Result<()>
     where
         S: Into<String>
-    {       
+    {
         let url = url.into();
 
         // lock other tasks:
@@ -75,7 +81,7 @@ impl Tab {
     }
 
     /// Inject JavaScript to window tab
-    pub async fn inject<D: serde::de::DeserializeOwned>(&mut self, script: &str) -> Result<D> {
+    pub async fn inject<D: serde::de::DeserializeOwned>(&self, script: &str) -> Result<D> {
         // lock other tasks:
         self.manager.lock().await;
         
@@ -106,7 +112,7 @@ impl Tab {
     }
 
     /// Close window tab
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&self) -> Result<()> {
         // lock other tasks:
         self.manager.lock().await;
 
@@ -127,23 +133,10 @@ impl Tab {
                 .await?;
 
             // check tab for closed:
-            let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
-            let resp = self.client
-                .get(&handles_url)
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<Value>()
-                .await?;
-            let handles = resp["value"]
-                .as_array()
-                .ok_or(Error::IncorrectWindowHandles)?
-                .iter()
-                .map(|v| v.as_str().unwrap_or(""))
-                .collect::<Vec<_>>();
+            let handles = self.get_tabs_ids().await?;
 
             // tab not exists - success!
-            if !handles.contains(&self.tab_id.as_str()) {
+            if !handles.contains(&self.tab_id) {
                 break;
             }
         }
@@ -152,5 +145,32 @@ impl Tab {
         self.manager.unlock().await;
 
         Ok(())
+    }
+
+    /// Returns all tab identifiers
+    async fn get_tabs_ids(&self) -> Result<Vec<String>> {
+        let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
+
+        let response = self.client
+            .get(&handles_url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Value>()
+            .await?;
+
+        let handles = response["value"]
+            .as_array()
+            .ok_or(Error::IncorrectWindowHandles)?
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .ok_or(Error::IncorrectWindowHandles)
+                    .map(|s| s.to_string())
+                    .map_err(|e| e.into())
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(handles)
     }
 }

@@ -33,6 +33,8 @@ pub enum Error {
     #[display = "Element not found for the given selector"]
     ElementNotFound,
 
+    #[display = "Tab with the identifier '{0}' was not found"]
+    TabNotFound(String),
 
     #[display = "Unexpected script response value"]
     UnexpectedResponse,

@@ -1,29 +1,49 @@
-use crate::{ prelude::*, TaskManager };
-use super::Tab;
+use crate::prelude::*;
+use super::*;
 
-use std::process::{ Command, Stdio, Child };
+use std::process::{ Command, Stdio };
 use reqwest::Client;
 use serde_json::{ json, Value };
 
 /// The chromedriver session
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct Session {
     client: Client,
-    port: String,
-    process: Child,
+    port: u16,
     session_id: String,
-    manager: Arc<TaskManager>
+    manager: Arc<SessionManager>
 }
 
 impl Session {
+    /// Uses an already runned chromedriver
+    pub async fn new<S: Into<String>>(port: u16, session_id: S) -> Result<Self> {
+        // init client:
+        let client = Client::new();
+
+        Ok(Self {
+            port,
+            client,
+            session_id: session_id.into(),
+            manager: Arc::new(SessionManager::new())
+        })
+    }
+
+    /// Returns chromederiver server port
+    pub fn get_port(&self) -> u16 {
+        self.port
+    }
+    
+    /// Returns chromedriver sessions id
+    pub fn get_id(&self) -> &str {
+        &self.session_id
+    }
+    
     /// Run chromedriver session in new window
     /// * port: a new chromedriver session IP-port
     /// * chromedriver_path: path to chromedriver
     /// * profile_path: path to storage user profile (None = do not save session)
     /// * headless: runs as headless mode (without interface)
-    pub async fn run<S: Into<String>, P: Into<PathBuf>>(port: S, chromedriver_path: P, profile_path: Option<PathBuf>, headless: bool) -> Result<Self> {
-        let port = port.into();
-        
+    pub async fn run<P: Into<PathBuf>>(port: u16, chromedriver_path: P, profile_path: Option<PathBuf>, headless: bool) -> Result<Self> {
         // get path to chromedriver:
         let mut cmd = Command::new(chromedriver_path.into());
 
@@ -45,7 +65,7 @@ impl Session {
             cmd.stdin(Stdio::null());
         }
 
-        let process = cmd.spawn()?;
+        let _ = cmd.spawn()?;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;  // waiting when chromedriver is initializes..
 
         // init request options:
@@ -110,9 +130,8 @@ impl Session {
         let mut this = Self {
             client,
             port,
-            process,
             session_id,
-            manager: Arc::new(TaskManager::new()),
+            manager: Arc::new(SessionManager::new()),
         };
 
         #[cfg(feature = "no-automation")]
@@ -124,7 +143,8 @@ impl Session {
     }
 
     /// Disabled automation context
-    pub async fn disable_automation(&mut self) -> Result<()> {
+    #[cfg(feature = "no-automation")]
+    async fn disable_automation(&mut self) -> Result<()> {
         let cdp_url = fmt!("http://127.0.0.1:{}/session/{}/chromium/send_command", self.port, self.session_id);
     
         let script = r#"
@@ -167,32 +187,114 @@ impl Session {
 
         Ok(())
     }
+
+    /// Returns all tab identifiers
+    pub async fn get_tabs_ids(&self) -> Result<Vec<String>> {
+        let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
+
+        let response = self.client
+            .get(&handles_url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Value>()
+            .await?;
+
+        let handles = response["value"]
+            .as_array()
+            .ok_or(Error::IncorrectWindowHandles)?
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .ok_or(Error::IncorrectWindowHandles)
+                    .map(|s| s.to_string())
+                    .map_err(|e| e.into())
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(handles)
+    }
+
+    /// Returns current active tab
+    pub async fn get_active_tab(&self) -> Result<Arc<Mutex<Tab>>> {
+        let url = fmt!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id);
     
-    /// Open URL-address on new tab
-    pub async fn open<S: Into<String>>(&mut self, url: S) -> Result<Arc<Mutex<Tab>>> {
-        let url = url.into();
+        let resp = self.client
+            .get(&url)
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
         
-        // switch to last tab:
+        let handle = resp["value"]
+            .as_str()
+            .ok_or(Error::IncorrectWindowHandle)?
+            .to_string();
+        
+        match self.get_tab(&handle).await? {
+            Some(tab) => Ok(tab),
+            None => Err(Error::TabNotFound(handle).into())
+        }
+    }
+
+    /// Returns all tabs
+    pub async fn get_tabs(&self) -> Result<Vec<Arc<Mutex<Tab>>>> {
+        let handles = self.get_tabs_ids().await?;
+        
+        let mut tabs = Vec::with_capacity(handles.len());
+        for tab_id in handles {
+            let tab = Tab {
+                client: self.client.clone(),
+                port: self.port,
+                session_id: self.session_id.clone(),
+                tab_id,
+                url: String::new(),
+                manager: self.manager.clone(),
+            };
+            tabs.push(Arc::new(Mutex::new(tab)));
+        }
+        
+        Ok(tabs)
+    }
+    
+    /// Returns tab by id
+    pub async fn get_tab<S: Into<String>>(&self, tab_id: S) -> Result<Option<Arc<Mutex<Tab>>>> {
+        let tab_id = tab_id.into();
+        let handles = self.get_tabs_ids().await?;
+        
+        if !handles.contains(&tab_id) {
+            return Ok(None);
+        }
+        
+        let tab = Arc::new(Mutex::new(Tab {
+            client: self.client.clone(),
+            port: self.port,
+            session_id: self.session_id.clone(),
+            tab_id,
+            url: String::new(),
+            manager: self.manager.clone(),
+        }));
+        
+        Ok(Some(tab))
+    }
+    
+    /// Open URL-address on a new tab
+    pub async fn open<S: Into<String>>(&self, url: S) -> Result<Arc<Mutex<Tab>>> {
+        let url = url.into();
+
+        // lock tabs activity:
+        self.manager.lock().await;
+
+        // activate last tab:
         {
-            let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
-            let resp = self.client
-                .get(&handles_url)
-                .send()
-                .await?
-                .json::<Value>()
-                .await?;
-
-            let handles = resp["value"]
-                .as_array()
-                .ok_or(Error::IncorrectWindowHandles)?;
-
-            // get last tab:
+            // get tab handles:
+            let handles = self.get_tabs_ids().await?;
+            
+            // activate last tab:
             let last_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
-
-            // activate tab:
             self.client
-                .post(&format!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
-                .json(&json!({"handle": last_handle }))
+                .post(&fmt!("http://127.0.0.1:{}/session/{}/window", self.port, self.session_id))
+                .json(&json!({"handle": &last_handle}))
                 .send()
                 .await?;
         }
@@ -212,20 +314,7 @@ impl Session {
             sleep(Duration::from_millis(100)).await;
 
             // get tabs list:
-            let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
-            let resp = self.client
-                .get(&handles_url)
-                .send()
-                .await?
-                .json::<Value>()
-                .await?;
-
-            let handles = resp["value"]
-                .as_array()
-                .ok_or(Error::IncorrectWindowHandles)?
-                .iter()
-                .map(|v| v.as_str().unwrap().to_string())
-                .collect::<Vec<_>>();
+            let handles = self.get_tabs_ids().await?;
 
             // search new tab handle:
             let new_handle = handles.last().ok_or(Error::NoWindowHandles)?.clone();
@@ -233,55 +322,44 @@ impl Session {
             // create tab:
             let mut tab = Tab {
                 client: self.client.clone(),
-                port: self.port.clone(),
+                port: self.port,
                 session_id: self.session_id.clone(),
                 tab_id: new_handle,
                 url: str!(""),
                 manager: self.manager.clone()
             };
 
+            // unlock tabs:
+            self.manager.unlock().await;
+            
             // open URL:
             tab.open(url).await?;
             tab
         };
 
+        // unlock tabs (if it's not already unlocked):
+        self.manager.unlock().await;
+
         Ok(Arc::new(Mutex::new(tab)))
     }
 
     /// Close chromedriver session
-    pub async fn close(mut self) -> Result<()> {
-        // closing window:
-        let url = fmt!("http://127.0.0.1:{}/session/{}", self.port, self.session_id);
-        self.client
-            .delete(&url)
+    pub async fn close(&self) -> Result<()> {
+        // close session:
+        let close_url = fmt!("http://127.0.0.1:{}/session/{}", self.port, self.session_id);
+        let _ = self.client
+            .delete(&close_url)
             .send()
-            .await?;
+            .await;
 
-        // killing chromedriver background process:
-        self.process.kill()?;
+        // shutdown server:
+        let shutdown_url = fmt!("http://127.0.0.1:{}/shutdown", self.port);
+        let _ = self.client.post(&shutdown_url).send().await;
+        
+        // additional quit:
+        let quit_url = fmt!("http://127.0.0.1:{}/quit", self.port);
+        let _ = self.client.post(&quit_url).send().await;
 
         Ok(())
-    }
-
-    /// Returns windows handles
-    pub async fn handles(&mut self) -> Result<Vec<String>> {
-        let handles_url = fmt!("http://127.0.0.1:{}/session/{}/window/handles", self.port, self.session_id);
-
-        let resp = self.client
-            .get(&handles_url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Value>()
-            .await?;
-
-        let handles = resp["value"]
-            .as_array()
-            .ok_or(Error::IncorrectWindowHandles)?
-            .into_iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>();
-
-        Ok(handles)
     }
 }

@@ -4,28 +4,28 @@ use macron::path;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let free_port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port().to_string();
+    let free_port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
     let chrome_path = path!("bin/chromedriver/chromedriver.exe");
     let session_path = path!("%/ChromeDriver/Profile");
 
-    let mut session = Session::run(
-        &free_port,                  
-        chrome_path,     
-        Some(session_path),   
-        false                
+    let session = Session::run(
+        free_port, 
+        chrome_path,
+        Some(session_path),
+        false   // headless mode
     ).await?;
     println!("[INFO]: session launched on port [{free_port}]");
 
     // Tab 1: Normal page (fast close test)
     let tab1 = session.open("https://example.com").await?;
-    let mut tab1 = tab1.lock().await;
+    let tab1 = tab1.lock().await;
     println!("[INFO]: tab1: form page loaded");
 
     sleep(Duration::from_secs(2)).await;
 
     // Tab 2: Page with beforeunload handler (blocks close)
     let tab2 = session.open("https://html-online.com/editor/").await?;
-    let mut tab2 = tab2.lock().await;
+    let tab2 = tab2.lock().await;
     tab2.inject::<()>(r#"
         window.addEventListener('beforeunload', function(e) {
             e.preventDefault();
@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
 
     // Tab 3: Alert + Confirm scenario (multiple retries)
     let tab3 = session.open("https://httpbin.org/html").await?;
-    let mut tab3 = tab3.lock().await;
+    let tab3 = tab3.lock().await;
     tab3.inject::<()>(r#"
         // Delayed alert 3s after close attempt
         setTimeout(() => {
@@ -70,13 +70,13 @@ async fn main() -> Result<()> {
     println!("[✅] tab3 closed (multiple retries succeeded)\n");
 
     // Verify remaining handles
-    let handles = session.handles().await?;
+    let handles = session.get_tabs_ids().await?;
     println!("[INFO]: Remaining tabs: {}", handles.len());
 
     sleep(Duration::from_secs(1)).await;
     
     session.close().await?;
-    println!("[INFO]: session closed");
+    println!("[INFO]: Session closed");
 
     Ok(())
 }
